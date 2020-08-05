@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 
 'The ORM framework of Web'
+'user can define a class to represent a table freely by using this ORM'
 
 import logging, asyncio, aiomysql
 
 def log(sql, args=()):
     '''logging function'''
-    logging.info('SQL: %s', % sql)
+    logging.info('SQL: %s' % sql)
 
 
 async def create_pool(loop, **kw):
@@ -41,7 +42,7 @@ async def select(sql, args, size=None):
             else:
                 rs = await cur.fetchall()
         logging.info('rows returned: %s' % len(rs))
-        retunr rs
+        return rs
 
 
 async def execute(sql, args, autocommit=True):
@@ -53,15 +54,21 @@ async def execute(sql, args, autocommit=True):
         try:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(sql.replace('?', '%s'), args)
-                affcted = cur.rowcount
+                affected = cur.rowcount
             if not autocommit:
                 await conn.commit()
         except BaseException as e:
             if not autocommit:
                 await conn.rollback()
             raise
-        return affcted
+        return affected
 
+
+def create_args_string(num):
+    L = []
+    for n in range(num):
+        L.append('?')
+    return ', '.join(L)
 
 class Field(object):
 
@@ -81,7 +88,7 @@ class StringField(Field):
         super().__init__(name, ddl, primary_key, default)
 
 
-class BoolField(Field):
+class BooleanField(Field):
 
     def __init__(self, name=None, default=False):
         super().__init__(name, 'boolean', False, default)
@@ -102,11 +109,11 @@ class FloatField(Field):
 class TextField(Field):
 
     def __init__(self, name=None, default=None):
-        super().__init__(name, 'text', primary_key, default)
+        super().__init__(name, 'text', False, default)
         
 
 class ModelMetaclass(type):
-
+    ''' create metaclass'''
     def __new__(cls, name, bases, attrs):
         if name == 'Model':
             return type.__new__(cls, name, bases, attrs)
@@ -133,6 +140,7 @@ class ModelMetaclass(type):
         attrs['__mappings__'] = mappings
         attrs['__table__'] = tableName
         attrs['__primary_key__'] = primaryKey
+        attrs['__fields__'] = fields
         attrs['__select__'] = 'select `%s`, %s from `%s`' % (primaryKey, ', '.join(escaped_fields), tableName)
         attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
         attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
@@ -142,7 +150,9 @@ class ModelMetaclass(type):
 
 
 class Model(dict, metaclass=ModelMetaclass):
-    '''define the base model for all ORM mapping'''
+    '''define the base model for all ORM mapping
+       all separate tables defined by users will 
+       this class, using the metaclass ModelMetaclass'''
     def __init__(self, **kw):
         super(Model, self).__init__(**kw)
 
@@ -164,10 +174,10 @@ class Model(dict, metaclass=ModelMetaclass):
             field = self.__mappings__[key]
             if field.default is not None:
                 value = field.default() if callable(field.default) else field.default
-                loggings.debug('using default value for %s: %s' % (key, str(value)))
+                logging.debug('using default value for %s: %s' % (key, str(value)))
         return value
 
-    @classmethod
+    @classmethod # the first parameter must be cls
     async def findAll(cls, where=None, args=None, **kw):
         '''find objects by where clause'''
         sql = [cls.__select__]
@@ -212,26 +222,26 @@ class Model(dict, metaclass=ModelMetaclass):
         rs = await select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
         if len(rs) == 0:
             return None
-        return cls[**rs[0]]
+        return cls(**rs[0])
 
     async def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
         args.append(self.getValueOrDefault(self.__primary_key__))
-        rows = await execute(self.__init__, args)
-        if row != 1:
+        rows = await execute(self.__insert__, args)
+        if rows != 1:
             logging.warn('failed to insert record: affected rows: %s' % rows)
 
     async def update(self):
         args = list(map(self.getValue, self.__fields__))
         args.append(self.getValue(self.__primary_key__))
         rows = await execute(self.__update__, args)
-        if row != 1:
+        if rows != 1:
             logging.warn('failed to update by primary key: affected rows: %s' % rows)
         
     async def remove(self):
         args = [self.getValue(self.__primary_key__)]
         rows = await execute(self.__delete__, args)
-        if row != 1:
+        if rows != 1:
             logging.warn('failed to remove by primary key: affcted rows: %s' % rows)
 
     
