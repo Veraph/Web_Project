@@ -11,7 +11,7 @@ def log(sql, args=()):
     logging.info('SQL: %s' % sql)
 
 
-async def create_pool(loop, **kw):
+async def create_pool(**kw):
     '''Create a full scale connection pool to let every 
        http request can obatin database connection.'''
     logging.info('Create database connection pool...')
@@ -26,7 +26,6 @@ async def create_pool(loop, **kw):
         autocommit=kw.get('autocommit', True),
         maxsize=kw.get('maxsize', 10),
         minsize=kw.get('minsize', 1),
-        loop=loop
     )
 
 
