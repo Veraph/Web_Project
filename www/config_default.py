@@ -10,8 +10,8 @@ configs = {
     'db': {
         'host': '127.0.0.1',
         'port': 3333,
-        'user': 'www',
-        'password': 'www',
+        'user': 'root',
+        'password': 'password',
         'db': 'test1'
     },
     'session': {
